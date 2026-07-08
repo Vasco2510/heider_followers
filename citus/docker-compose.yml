@@ -1,0 +1,68 @@
+services:
+  coordinator:
+    image: citusdata/citus:12.1
+    container_name: citus-coordinator
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: news_analysis_pg
+    volumes:
+      - citus-coordinator-data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - citus_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d news_analysis_pg"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker1:
+    image: citusdata/citus:12.1
+    container_name: citus-worker1
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: news_analysis_pg
+    volumes:
+      - citus-worker1-data:/var/lib/postgres/data
+    networks:
+      - citus_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d news_analysis_pg"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker2:
+    image: citusdata/citus:12.1
+    container_name: citus-worker2
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: news_analysis_pg
+    volumes:
+      - citus-worker2-data:/var/lib/postgres/data
+    networks:
+      - citus_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d news_analysis_pg"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  citus-coordinator-data:
+  citus-worker1-data:
+  citus-worker2-data:
+
+networks:
+  citus_net:
+    driver: bridge
+    name: lab16_citus_net

@@ -1,0 +1,138 @@
+services:
+  mongocfg:
+    image: mongo:8.0
+    container_name: mongo-cfg
+    command: ["mongod", "--configsvr", "--replSet", "cfgrs", "--port", "27019", "--dbpath", "/data/db"]
+    ports:
+      - "27019:27019"
+    volumes:
+      - mongo-cfg-data:/data/db
+    networks:
+      - mongo_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27019", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mongo-init-cfg:
+    image: mongo:8.0
+    container_name: mongo-init-cfg
+    depends_on:
+      mongoc:
+        condition: service_healthy
+    networks:
+      - mongo_net
+    command: >
+      mongosh --host mongoc --port 27019 --eval "
+        rs.initiate({
+          _id: 'cfgrs',
+          configsvr: true,
+          members: [{ _id: 0, host: 'mongoc:27019' }]
+        });
+      "
+
+  shard1:
+    image: mongo:8.0
+    container_name: mongo-shard1
+    command: ["mongod", "--shardsvr", "--replSet", "shard1rs", "--port", "27018", "--dbpath", "/data/db"]
+    ports:
+      - "27018:27018"
+    volumes:
+      - mongo-shard1-data:/data/db
+    networks:
+      - mongo_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mongo-init-shard1:
+    image: mongo:8.0
+    container_name: mongo-init-shard1
+    depends_on:
+      shard1:
+        condition: service_healthy
+    networks:
+      - mongo_net
+    command: >
+      mongosh --host shard1 --port 27018 --eval "
+        rs.initiate({
+          _id: 'shard1rs',
+          members: [{ _id: 0, host: 'shard1:27018' }]
+        });
+      "
+
+  shard2:
+    image: mongo:8.0
+    container_name: mongo-shard2
+    command: ["mongod", "--shardsvr", "--replSet", "shard2rs", "--port", "27020", "--dbpath", "/data/db"]
+    ports:
+      - "27020:27020"
+    volumes:
+      - mongo-shard2-data:/data/db
+    networks:
+      - mongo_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27020", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mongo-init-shard2:
+    image: mongo:8.0
+    container_name: mongo-init-shard2
+    depends_on:
+      shard2:
+        condition: service_healthy
+    networks:
+      - mongo_net
+    command: >
+      mongosh --host shard2 --port 27020 --eval "
+        rs.initiate({
+          _id: 'shard2rs',
+          members: [{ _id: 0, host: 'shard2:27020' }]
+        });
+      "
+
+  mongos:
+    image: mongo:8.0
+    container_name: mongo-mongos
+    depends_on:
+      - mongo-init-cfg
+      - mongo-init-shard1
+      - mongo-init-shard2
+    command: ["mongos", "--configdb", "cfgrs/mongoc:27019", "--port", "27017", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    networks:
+      - mongo_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27017", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  mongo-init-sharding:
+    image: mongo:8.0
+    container_name: mongo-init-sharding
+    depends_on:
+      mongos:
+        condition: service_healthy
+    networks:
+      - mongo_net
+    volumes:
+      - ./scripts/init-sharding.js:/init-sharding.js:ro
+    command: >
+      mongosh --host mongos --port 27017 --file /init-sharding.js
+
+volumes:
+  mongo-cfg-data:
+  mongo-shard1-data:
+  mongo-shard2-data:
+
+networks:
+  mongo_net:
+    driver: bridge
+    name: lab16_mongo_net
