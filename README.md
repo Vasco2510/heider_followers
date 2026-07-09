@@ -61,6 +61,7 @@ lab16/
 │   ├── screenshots/                   # Capturas de evidencia
 │   ├── informe_data.md                # Análisis del dataset
 │   ├── informe.md                     # Informe final P1-P12
+│   ├── informe_parte2.md              # Parte II (Citus): P6-P10 con evidencia
 │   └── sistema_trabajo.md               # Plan de trabajo detallado
 ├── mongodb/
 │   ├── docker-compose.yml              # Cluster MongoDB Sharding
@@ -73,7 +74,8 @@ lab16/
 └── citus/
     ├── docker-compose.yml              # Cluster Citus
     ├── scripts/
-    │   ├── init.sql                    # DDL + extensión + índices
+    │   ├── init.sql                    # Workers + DDL + tabla distribuida + índices
+    │   ├── setup_cluster.ps1           # Setup automatizado del cluster (Windows)
     │   └── load_data.py               # Carga de datos
     ├── notebooks/
     │   └── citus_analysis.ipynb       # Análisis Q1-Q5
@@ -90,17 +92,20 @@ lab16/
 
 ## Instalación
 
-```bash
+```powershell
 # 1. Clonar el repositorio
 git clone <repo-url> lab16
 cd lab16
 
-# 2. Instalar dependencias Python
-pip install -r requirements.txt
+# 2. Crear entorno virtual e instalar dependencias
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# 3. Limpiar el dataset
-python scripts/clean_and_extract.py
+# 3. Colocar el dataset crudo en dataset/ (subcarpetas Argentina/ y World/) y limpiarlo
+.venv\Scripts\python.exe scripts/clean_and_extract.py
 ```
+
+> En VS Code, seleccionar el intérprete/kernel `.venv` para ejecutar los notebooks.
 
 ## Ejecución Paso a Paso
 
@@ -120,20 +125,20 @@ python scripts/load_data.py
 Verificar con Compass: `mongodb://localhost:27017` → db `news_analysis`.
 
 ### Paso 3: Citus
+```powershell
+# Levanta el cluster, espera healthchecks, registra workers y crea tabla distribuida + índices
+powershell -ExecutionPolicy Bypass -File citus/scripts/setup_cluster.ps1
+
+# Cargar datos
+.venv\Scripts\python.exe citus/scripts/load_data.py
+```
+
+Equivalente manual (si no se usa el script):
 ```bash
 cd citus
 docker compose up -d
-# Esperar ~20s
-
-# Agregar los workers al coordinator
-docker exec citus-coordinator psql -U postgres -d news_analysis_pg \
-  -c "SELECT master_add_node('worker1', 5432); SELECT master_add_node('worker2', 5432);"
-
-# Ejecutar init.sql manualmente si no se ejecutó en el entrypoint
-docker exec citus-coordinator psql -U postgres -d news_analysis_pg -f /docker-entrypoint-initdb.d/init.sql
-
-# Cargar datos
-python scripts/load_data.py
+# Esperar a que los 3 contenedores estén healthy (docker ps)
+docker exec citus-coordinator psql -U postgres -d news_analysis_pg -v ON_ERROR_STOP=1 -f /scripts/init.sql
 ```
 Verificar con pgAdmin: `localhost:5432`, db `news_analysis_pg`.
 

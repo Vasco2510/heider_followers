@@ -3,11 +3,12 @@ import re
 import json
 import sys
 from datetime import datetime
+from pathlib import Path
 import pandas as pd
 from bs4 import BeautifulSoup
 from dateutil import parser as date_parser
 
-DATASET_DIR = r"Z:\26-1\BD2\lab16\dataset"
+DATASET_DIR = str(Path(__file__).resolve().parents[1] / "dataset")
 OUTPUT_DIR = os.path.join(DATASET_DIR, "processed")
 CATEGORIES = ["Argentina", "World"]
 

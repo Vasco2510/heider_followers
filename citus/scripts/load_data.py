@@ -1,10 +1,10 @@
-import os
 import json
 import time
 import psycopg2
 from datetime import datetime
+from pathlib import Path
 
-DATA_FILE = r"Z:\26-1\BD2\lab16\dataset\processed\milei_news_clean.json"
+DATA_FILE = Path(__file__).resolve().parents[2] / "dataset" / "processed" / "milei_news_clean.json"
 DB_CONFIG = {
     "host": "localhost",
     "port": 5432,
@@ -18,6 +18,12 @@ print("Conectando a Citus coordinator...")
 conn = psycopg2.connect(**DB_CONFIG)
 cursor = conn.cursor()
 print("Conexion exitosa.\n")
+
+if not DATA_FILE.exists():
+    raise SystemExit(
+        f"No existe {DATA_FILE}.\n"
+        "Coloca el dataset en dataset/ y ejecuta primero: python scripts/clean_and_extract.py"
+    )
 
 print(f"Cargando datos desde: {DATA_FILE}")
 with open(DATA_FILE, "r", encoding="utf-8") as f:

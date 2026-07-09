@@ -10,7 +10,9 @@ services:
       POSTGRES_DB: news_analysis_pg
     volumes:
       - citus-coordinator-data:/var/lib/postgresql/data
-      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Montado fuera del entrypoint: se ejecuta manualmente (o via setup_cluster.ps1)
+      # cuando los workers ya están healthy, porque citus_add_node requiere workers activos.
+      - ./scripts/init.sql:/scripts/init.sql:ro
     networks:
       - citus_net
     healthcheck:
@@ -29,7 +31,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: news_analysis_pg
     volumes:
-      - citus-worker1-data:/var/lib/postgres/data
+      - citus-worker1-data:/var/lib/postgresql/data
     networks:
       - citus_net
     healthcheck:
@@ -48,7 +50,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: news_analysis_pg
     volumes:
-      - citus-worker2-data:/var/lib/postgres/data
+      - citus-worker2-data:/var/lib/postgresql/data
     networks:
       - citus_net
     healthcheck:
