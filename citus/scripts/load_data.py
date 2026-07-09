@@ -7,7 +7,7 @@ from pathlib import Path
 DATA_FILE = Path(__file__).resolve().parents[2] / "dataset" / "processed" / "milei_news_clean.json"
 DB_CONFIG = {
     "host": "localhost",
-    "port": 5432,
+    "port": 5435,  # el 5432 del host lo ocupa un PostgreSQL 17 local
     "dbname": "news_analysis_pg",
     "user": "postgres",
     "password": "postgres",

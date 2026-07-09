@@ -40,7 +40,7 @@ db.milei_news.stats()
 
 ### docker-compose.yml
 ```yaml
-# Puerto coordinator: 5432
+# Puerto coordinator: 5435 (el 5432 del host lo ocupa un PostgreSQL 17 local)
 # Puerto worker1: 5433
 # Puerto worker2: 5434
 # DB name: news_analysis_pg
@@ -51,11 +51,11 @@ db.milei_news.stats()
 ### Conexión
 ```bash
 # Host local (coordinator)
-host=localhost port=5432 dbname=news_analysis_pg user=postgres password=postgres
+host=localhost port=5435 dbname=news_analysis_pg user=postgres password=postgres
 
 # pgAdmin
 Host: localhost
-Port: 5432
+Port: 5435
 Database: news_analysis_pg
 Username: postgres
 Password: postgres
@@ -80,7 +80,7 @@ SELECT * FROM citus_table_sizes;
 | Sistema | Usuario | Password | Puerto |
 |---------|---------|----------|--------|
 | MongoDB | - | - | 27017 (mongos) |
-| Citus Coordinator | postgres | postgres | 5432 |
+| Citus Coordinator | postgres | postgres | 5435 |
 | Citus Worker 1 | postgres | postgres | 5433 |
 | Citus Worker 2 | postgres | postgres | 5434 |
 

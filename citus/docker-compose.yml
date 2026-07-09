@@ -1,17 +1,19 @@
-services:
+﻿services:
   coordinator:
     image: citusdata/citus:12.1
     container_name: citus-coordinator
     ports:
-      - "5432:5432"
+      # 5435 en el host porque el 5432 lo ocupa un PostgreSQL 17 local de Windows
+      - "5435:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_DB: news_analysis_pg
     volumes:
       - citus-coordinator-data:/var/lib/postgresql/data
       # Montado fuera del entrypoint: se ejecuta manualmente (o via setup_cluster.ps1)
-      # cuando los workers ya están healthy, porque citus_add_node requiere workers activos.
+      # cuando los workers ya estan healthy, porque citus_add_node requiere workers activos.
       - ./scripts/init.sql:/scripts/init.sql:ro
     networks:
       - citus_net
@@ -29,6 +31,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_DB: news_analysis_pg
     volumes:
       - citus-worker1-data:/var/lib/postgresql/data
@@ -48,6 +51,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_DB: news_analysis_pg
     volumes:
       - citus-worker2-data:/var/lib/postgresql/data

@@ -14,7 +14,7 @@ El cluster se orquesta con Docker Compose (`citus/docker-compose.yml`) usando la
 
 | Nodo | Contenedor | Puerto host | Rol |
 |------|-----------|-------------|-----|
-| Coordinator | `citus-coordinator` | 5432 | Recibe queries, planifica y coordina la ejecución distribuida |
+| Coordinator | `citus-coordinator` | 5435 | Recibe queries, planifica y coordina la ejecución distribuida |
 | Worker 1 | `citus-worker1` | 5433 | Almacena y procesa shards |
 | Worker 2 | `citus-worker2` | 5434 | Almacena y procesa shards |
 
@@ -25,7 +25,7 @@ El cluster se orquesta con Docker Compose (`citus/docker-compose.yml`) usando la
 
 **📷 EVIDENCIA (pegar aquí):**
 - Screenshot de `citus_get_active_worker_nodes()` mostrando los 2 workers activos (terminal o pgAdmin).
-- Screenshot de pgAdmin conectado a `localhost:5432` / `news_analysis_pg`.
+- Screenshot de pgAdmin conectado a `localhost:5435` / `news_analysis_pg`.
 
 ---
 
@@ -115,21 +115,21 @@ Tiempos medidos por el notebook (`citus/notebooks/citus_analysis.ipynb`, secció
 
 ## P10: ¿Cómo Citus distribuye y paraleliza cada tipo de consulta? ¿Se detecta overhead de coordinación? (2 pts)
 
-En los `EXPLAIN ANALYZE` de todas las queries aparece el nodo **`Custom Scan (Citus Adaptive)`**: el coordinator reescribe la query en *tasks* por shard (`Task Count: 32` con la configuración por defecto) y las ejecuta en paralelo sobre los workers.
+En los `EXPLAIN ANALYZE` de **todas** las queries aparece el nodo **`Custom Scan (Citus Adaptive)`** con **`Task Count: 32`**: el coordinator reescribe la consulta en 32 *tasks* (una por shard) y las ejecuta en paralelo sobre los 2 workers (16 shards cada uno). Cada task es SQL normal de PostgreSQL corriendo contra el shard local (`milei_news_102xxx`), con sus índices locales.
 
-Por tipo de consulta:
+**Cómo se distribuye cada tipo de consulta:**
 
-- **Q1/Q2 (texto):** cada task ejecuta un `Bitmap Heap Scan` + `Bitmap Index Scan` sobre el GIN local de su shard; el coordinator mezcla los resultados y aplica el `ORDER BY rank/published` global. Overhead: ordenamiento final + transferencia de filas candidatas.
-- **Q3 (top-N):** Citus hace *push-down* del `ORDER BY ... LIMIT 10` a cada task (cada shard devuelve como máximo 10 filas) y el coordinator hace un merge final. Overhead mínimo.
-- **Q4 (GROUP BY clave de distribución):** la agregación es **completamente local** en cada shard — cada grupo de `section` existe en un único shard, así que el coordinator solo concatena y ordena los grupos. Es el caso ideal del particionamiento.
-- **Q5 (GROUP BY atributo no particionado):** agregación en **dos fases**: cada task calcula `count(*)` parcial por `news_paper` y el coordinator re-agrega (`HashAggregate` por encima del Custom Scan). Aquí se observa el **overhead de coordinación**: más filas intermedias viajan al coordinator y hay una segunda agregación.
+- **Q1/Q2 (búsqueda textual):** cada task hace `Bitmap Index Scan` sobre el GIN local de su shard y ordena parcialmente por `ts_rank`; el coordinator mezcla las filas candidatas de las 32 tasks y aplica el `Sort` global por relevancia. Overhead: el ordenamiento final y el cálculo de rank no se pueden delegar del todo.
+- **Q3 (top-N por fecha):** Citus hace *push-down* del `ORDER BY published DESC LIMIT 10` a cada task (cada shard devuelve máximo 10 filas usando su B+Tree local) y el coordinator mezcla 320 filas como máximo. Overhead mínimo.
+- **Q4 (GROUP BY `section`, clave de distribución):** agregación **completamente local**. Como cada valor de `section` vive entero en un único shard, cada task devuelve grupos ya finales y el plan del coordinator es solo `Sort → Custom Scan` — **no hay re-agregación arriba del Custom Scan**. Es el caso ideal del particionamiento. Medido: el coordinator recibió apenas 1,298 bytes (70 grupos finales); tiempo total 25.0 ms.
+- **Q5 (GROUP BY `news_paper`, atributo no particionado):** agregación en **dos fases**. Cada task calcula `count(*)` parcial por `news_paper`, y en el plan del coordinator aparece un **`HashAggregate` por encima del Custom Scan** con `Group Key: remote_scan.news_paper` y `sum(remote_scan.cnt)` — la re-agregación de los parciales. Medido: viajaron 107 filas parciales (2,077 bytes) que el coordinator redujo a 20 grupos; tiempo total 38.2 ms.
 
-**Overhead de coordinación detectable:** con un dataset de ~2K–10K filas y 32 tasks sobre 2 workers, el costo fijo por task (planificación, conexión, ida y vuelta) puede dominar el tiempo total — las queries distribuidas pueden incluso ser más lentas que en un PostgreSQL único. Esto se evidencia comparando el `Task Count`, los tiempos por task y el tiempo total del plan.
+**Overhead de coordinación — sí, se detecta y se cuantifica:** en Q4 la task individual tardó **0.21 ms** y en Q5 **0.24 ms**, pero los tiempos totales fueron **25 ms y 38 ms**: más del 99% del tiempo es coordinación (planificar y despachar 32 tasks, conexiones a workers, recolección y merge), no procesamiento de datos. Con solo 2,224 filas el paralelismo no compensa ese costo fijo — un PostgreSQL sin distribuir sería más rápido. La comparación Q4 (25 ms, sin re-agregación) vs Q5 (38 ms, con re-agregación y más tuplas transferidas) muestra además el costo extra de agrupar por un atributo que no es la clave de distribución: **+52% de tiempo**.
 
 **📷 EVIDENCIA (pegar aquí):**
-- Extract de `EXPLAIN ANALYZE` de Q4 mostrando `Custom Scan (Citus Adaptive)` con agregación local (GroupAggregate/HashAggregate dentro de la task).
-- Extract de `EXPLAIN ANALYZE` de Q5 mostrando la re-agregación en el coordinator (HashAggregate sobre el Custom Scan).
-- Señalar el `Task Count` en ambos planes.
+- Extract de `EXPLAIN ANALYZE` de Q4: señalar `Custom Scan (Citus Adaptive)`, `Task Count: 32`, el `HashAggregate` **dentro** de la task, y que **no** hay agregación sobre el Custom Scan.
+- Extract de `EXPLAIN ANALYZE` de Q5: señalar el `HashAggregate` con `Group Key: remote_scan.news_paper` **encima** del Custom Scan (la segunda fase) y el `sum(remote_scan.cnt)` en el Sort.
+- Comparar en ambos: `Execution Time` de la task (~0.2 ms) vs `Execution Time` total (25–38 ms) → overhead de coordinación.
 
 ---
 

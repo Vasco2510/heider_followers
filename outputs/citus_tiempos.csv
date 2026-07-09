@@ -1,0 +1,6 @@
+Query,Descripción,Tiempo (ms)
+Q1,Búsqueda textual multi-término (ts_rank),7.07
+Q2,Búsqueda con exclusión (!Twitter),12.5
+Q3,Top 10 por fecha (ORDER BY published DESC),5.52
+Q4,"GROUP BY section (shard key, local)",5.0
+Q5,GROUP BY news_paper (scatter/gather),5.81

@@ -140,7 +140,7 @@ docker compose up -d
 # Esperar a que los 3 contenedores estén healthy (docker ps)
 docker exec citus-coordinator psql -U postgres -d news_analysis_pg -v ON_ERROR_STOP=1 -f /scripts/init.sql
 ```
-Verificar con pgAdmin: `localhost:5432`, db `news_analysis_pg`.
+Verificar con pgAdmin: `localhost:5435`, db `news_analysis_pg` (el 5432 del host lo ocupa un PostgreSQL local).
 
 ### Paso 4: Ejecutar Notebooks
 Abrir en VS Code:

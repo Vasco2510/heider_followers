@@ -29,7 +29,9 @@ foreach ($c in $containers) {
 Write-Host "  Esperando extension citus en cada nodo..."
 foreach ($c in $containers) {
     while ($true) {
-        $ext = docker exec $c psql -U postgres -d news_analysis_pg -tAc "SELECT 1 FROM pg_extension WHERE extname = 'citus'" 2>$null
+        # try/catch: durante el primer arranque postgres se reinicia y psql falla transitoriamente
+        $ext = ""
+        try { $ext = cmd /c "docker exec $c psql -U postgres -d news_analysis_pg -tAc `"SELECT 1 FROM pg_extension WHERE extname = 'citus'`" 2>nul" } catch {}
         if ("$ext".Trim() -eq "1") { Write-Host "  $c : extension citus lista"; break }
         if ((Get-Date) -gt $deadline) { throw "$c no tiene la extension citus tras 3 minutos" }
         Start-Sleep -Seconds 3
