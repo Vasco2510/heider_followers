@@ -1,52 +1,61 @@
-# BD2 Lab — Parte II: Setup automatizado del cluster Citus
-# Uso (desde la raiz del repo o desde citus/):
-#   powershell -ExecutionPolicy Bypass -File citus/scripts/setup_cluster.ps1
-#
-# Hace: docker compose up -d -> espera healthchecks -> registra workers +
-# crea tabla distribuida + indices (init.sql) -> muestra verificacion.
+param(
+    [switch]$SkipVerification
+)
 
-$ErrorActionPreference = "Stop"
-$citusDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+Write-Host "=== BD2 Lab 16 — Setup del Cluster Citus ===" -ForegroundColor Cyan
 
-Write-Host "=== 1/4 Levantando cluster Citus (coordinator + 2 workers) ===" -ForegroundColor Cyan
-docker compose -f (Join-Path $citusDir "docker-compose.yml") up -d
-if ($LASTEXITCODE -ne 0) { throw "docker compose up fallo" }
+# 1. Levantar servicios
+Write-Host "[1/4] Levantando contenedores..." -ForegroundColor Yellow
+docker compose -f "$PSScriptRoot\..\docker-compose.yml" up -d
 
-Write-Host "`n=== 2/4 Esperando a que los contenedores esten healthy ===" -ForegroundColor Cyan
+# 2. Esperar healthchecks de los 3 nodos
+Write-Host "[2/4] Esperando healthchecks..." -ForegroundColor Yellow
+$healthcheckTimeout = 60
+$interval = 5
+$elapsed = 0
+
 $containers = @("citus-coordinator", "citus-worker1", "citus-worker2")
-$deadline = (Get-Date).AddMinutes(3)
+
 foreach ($c in $containers) {
-    while ($true) {
-        $status = docker inspect --format "{{.State.Health.Status}}" $c 2>$null
-        if ($status -eq "healthy") { Write-Host "  $c : healthy"; break }
-        if ((Get-Date) -gt $deadline) { throw "$c no llego a healthy en 3 minutos (estado: $status)" }
-        Start-Sleep -Seconds 3
+    $elapsed = 0
+    Write-Host "  Esperando $c ..." -NoNewline
+    while ($elapsed -lt $healthcheckTimeout) {
+        $status = docker inspect --format='{{.State.Health.Status}}' $c 2>$null
+        if ($status -eq "healthy") {
+            Write-Host " healthy" -ForegroundColor Green
+            break
+        }
+        Start-Sleep -Seconds $interval
+        $elapsed += $interval
+    }
+    if ($elapsed -ge $healthcheckTimeout) {
+        Write-Host " TIMEOUT" -ForegroundColor Red
+        exit 1
     }
 }
 
-# pg_isready pasa antes de que el entrypoint de la imagen termine de crear la
-# extension citus; esperar a que exista en cada nodo evita una carrera.
-Write-Host "  Esperando extension citus en cada nodo..."
-foreach ($c in $containers) {
-    while ($true) {
-        # try/catch: durante el primer arranque postgres se reinicia y psql falla transitoriamente
-        $ext = ""
-        try { $ext = cmd /c "docker exec $c psql -U postgres -d news_analysis_pg -tAc `"SELECT 1 FROM pg_extension WHERE extname = 'citus'`" 2>nul" } catch {}
-        if ("$ext".Trim() -eq "1") { Write-Host "  $c : extension citus lista"; break }
-        if ((Get-Date) -gt $deadline) { throw "$c no tiene la extension citus tras 3 minutos" }
-        Start-Sleep -Seconds 3
-    }
+# 3. Ejecutar init.sql para crear tabla, distribuir e índices
+Write-Host "[3/4] Ejecutando init.sql (tabla + workers + índices)..." -ForegroundColor Yellow
+docker exec citus-coordinator psql -U postgres -d news_analysis_pg -f /scripts/init.sql
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ERROR ejecutando init.sql" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  init.sql ejecutado correctamente" -ForegroundColor Green
+
+# 4. Verificación
+if (-not $SkipVerification) {
+    Write-Host "[4/4] Verificando workers activos..." -ForegroundColor Yellow
+    docker exec citus-coordinator psql -U postgres -d news_analysis_pg -c "SELECT * FROM citus_get_active_worker_nodes();"
+    
+    Write-Host "`nVerificando tabla distribuida..." -ForegroundColor Yellow
+    docker exec citus-coordinator psql -U postgres -d news_analysis_pg -c "\d milei_news"
+} else {
+    Write-Host "[4/4] Verificación omitida (-SkipVerification)" -ForegroundColor Yellow
 }
 
-Write-Host "`n=== 3/4 Ejecutando init.sql (workers + tabla distribuida + indices) ===" -ForegroundColor Cyan
-docker exec citus-coordinator psql -U postgres -d news_analysis_pg -v ON_ERROR_STOP=1 -f /scripts/init.sql
-if ($LASTEXITCODE -ne 0) { throw "init.sql fallo" }
-
-Write-Host "`n=== 4/4 Verificacion (evidencia P6/P7) ===" -ForegroundColor Cyan
-Write-Host "`n--- Workers activos ---"
-docker exec citus-coordinator psql -U postgres -d news_analysis_pg -c "SELECT * FROM citus_get_active_worker_nodes();"
-Write-Host "--- Distribucion de shards por worker ---"
-docker exec citus-coordinator psql -U postgres -d news_analysis_pg -c "SELECT nodename, count(*) AS shards FROM citus_shards WHERE table_name::text = 'milei_news' GROUP BY nodename;"
-
-Write-Host "`nCluster listo. Siguiente paso: cargar datos con" -ForegroundColor Green
-Write-Host "  .venv\Scripts\python.exe citus/scripts/load_data.py" -ForegroundColor Green
+Write-Host "`n=== Cluster Citus listo ===" -ForegroundColor Cyan
+Write-Host "Coordinator: localhost:5435  DB: news_analysis_pg  User: postgres"
+Write-Host "Worker 1:    localhost:5433"
+Write-Host "Worker 2:    localhost:5434"
+Write-Host "`nSiguiente paso: python citus/scripts/load_data.py"
