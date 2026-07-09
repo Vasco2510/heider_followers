@@ -1,0 +1,23 @@
+# Core data
+pandas>=1.5,<3
+numpy>=1.21,<2
+
+# MongoDB
+pymongo>=4.0,<5
+
+# PostgreSQL
+psycopg2-binary>=2.9,<3
+
+# Web scraping & text
+beautifulsoup4>=4.11,<5
+lxml>=4.9,<6
+
+# Date parsing (tolerant)
+python-dateutil>=2.8,<3
+
+# Visualization
+matplotlib>=3.5,<4
+
+# Jupyter ecosystem
+jupyter>=1.0,<2
+ipykernel>=6.15,<7

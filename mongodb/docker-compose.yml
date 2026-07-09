@@ -10,25 +10,25 @@ services:
     networks:
       - mongo_net
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27019", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      test: ["CMD", "mongosh", "--port", "27019", "--eval", "db.adminCommand('ping').ok", "--quiet"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
 
   mongo-init-cfg:
     image: mongo:8.0
     container_name: mongo-init-cfg
     depends_on:
-      mongoc:
+      mongocfg:
         condition: service_healthy
     networks:
       - mongo_net
     command: >
-      mongosh --host mongoc --port 27019 --eval "
+      mongosh --host mongocfg --port 27019 --eval "
         rs.initiate({
           _id: 'cfgrs',
           configsvr: true,
-          members: [{ _id: 0, host: 'mongoc:27019' }]
+          members: [{ _id: 0, host: 'mongocfg:27019' }]
         });
       "
 
@@ -43,10 +43,10 @@ services:
     networks:
       - mongo_net
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping').ok", "--quiet"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
 
   mongo-init-shard1:
     image: mongo:8.0
@@ -75,10 +75,10 @@ services:
     networks:
       - mongo_net
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27020", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      test: ["CMD", "mongosh", "--port", "27020", "--eval", "db.adminCommand('ping').ok", "--quiet"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
 
   mongo-init-shard2:
     image: mongo:8.0
@@ -100,16 +100,19 @@ services:
     image: mongo:8.0
     container_name: mongo-mongos
     depends_on:
-      - mongo-init-cfg
-      - mongo-init-shard1
-      - mongo-init-shard2
-    command: ["mongos", "--configdb", "cfgrs/mongoc:27019", "--port", "27017", "--bind_ip_all"]
+      mongo-init-cfg:
+        condition: service_completed_successfully
+      mongo-init-shard1:
+        condition: service_completed_successfully
+      mongo-init-shard2:
+        condition: service_completed_successfully
+    command: ["mongos", "--configdb", "cfgrs/mongocfg:27019", "--port", "27017", "--bind_ip_all"]
     ports:
       - "27017:27017"
     networks:
       - mongo_net
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27017", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      test: ["CMD", "mongosh", "--port", "27017", "--eval", "db.adminCommand('ping').ok", "--quiet"]
       interval: 10s
       timeout: 5s
       retries: 20
